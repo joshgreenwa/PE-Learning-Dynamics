@@ -103,6 +103,8 @@ class CausalSelfAttention(nn.Module):
         self.d_model = d_model
         self.n_heads = n_heads
         self.head_dim = d_model // n_heads
+        self.store_attn = False  # set True to cache attention weights
+        self._attn_weights = None
 
         self.Wqkv = nn.Linear(d_model, 3 * d_model, bias=False)
         self.out_proj = nn.Linear(d_model, d_model, bias=False)
@@ -166,6 +168,8 @@ class CausalSelfAttention(nn.Module):
         )
         attn = attn + causal_mask[None, None, :, :]
         attn = F.softmax(attn, dim=-1)
+        if self.store_attn:
+            self._attn_weights = attn.detach()
 
         out = torch.matmul(attn, v)  # (B, n_heads, T, head_dim)
         out = out.transpose(1, 2).contiguous().view(B, T, D)
@@ -212,6 +216,8 @@ class GOATSelfAttention(nn.Module):
         self.d_model = d_model
         self.n_heads = n_heads
         self.head_dim = d_model // n_heads
+        self.store_attn = False
+        self._attn_weights = None
 
         if R is None:
             R = self.head_dim // 2
@@ -279,6 +285,8 @@ class GOATSelfAttention(nn.Module):
         )
         attn = attn + causal_mask[None, None, :, :]
         attn = F.softmax(attn, dim=-1)
+        if self.store_attn:
+            self._attn_weights = attn.detach()
 
         out = torch.matmul(attn, v)
         out = out.transpose(1, 2).contiguous().view(B, T, D)
@@ -341,6 +349,8 @@ class ALiBiSelfAttention(nn.Module):
         self.d_model = d_model
         self.n_heads = n_heads
         self.head_dim = d_model // n_heads
+        self.store_attn = False
+        self._attn_weights = None
 
         self.Wqkv = nn.Linear(d_model, 3 * d_model, bias=False)
         self.out_proj = nn.Linear(d_model, d_model, bias=False)
@@ -384,6 +394,8 @@ class ALiBiSelfAttention(nn.Module):
         )
         attn = attn + causal_mask[None, None, :, :]
         attn = F.softmax(attn, dim=-1)
+        if self.store_attn:
+            self._attn_weights = attn.detach()
 
         out = torch.matmul(attn, v)
         out = out.transpose(1, 2).contiguous().view(B, T, D)
@@ -547,16 +559,20 @@ class pRoPETransformer(nn.Module):
         p: float = 0.5,
     ):
         super().__init__()
-        assert n_heads >= 2, "p-RoPE requires at least 2 heads to split between RoPE and NoPE"
-        assert 0.0 < p < 1.0, "p must be in (0, 1)"
+        assert n_heads >= 1, "Need at least 1 head"
+        assert 0.0 < p <= 1.0, "p must be in (0, 1]"
 
         self.d_model = d_model
         self.p = p
 
         # Compute how many heads are NoPE vs RoPE
-        n_nope = max(1, round(p * n_heads))
-        n_rope = n_heads - n_nope
-        assert n_rope >= 1, "Must have at least 1 RoPE head; reduce p or increase n_heads"
+        if p == 1.0:
+            n_nope = n_heads
+            n_rope = 0
+        else:
+            n_nope = max(1, round(p * n_heads))
+            n_rope = n_heads - n_nope
+            assert n_rope >= 1, "Must have at least 1 RoPE head; reduce p or increase n_heads"
 
         # Build a boolean mask: first n_nope heads are NoPE (False), rest are RoPE (True)
         rope_head_mask = torch.cat([
