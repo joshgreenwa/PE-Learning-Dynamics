@@ -25,7 +25,7 @@ import subprocess, sys, os
 
 # Mount Google Drive
 from google.colab import drive
-drive.mount("/content/drive")
+drive.mount("/content/drive", force_remount=False)
 
 DRIVE_DIR = "/content/drive/MyDrive/PE_learning_dynamics"
 os.makedirs(DRIVE_DIR, exist_ok=True)
@@ -36,10 +36,12 @@ if not os.path.isdir(REPO_DIR):
     subprocess.check_call(
         ["git", "clone", "https://github.com/joshgreenwa/PE-Learning-Dynamics.git", REPO_DIR]
     )
+else:
+    # Pull latest changes if already cloned
+    subprocess.check_call(["git", "-C", REPO_DIR, "pull"])
 
-# The module lives inside the "PE Learning Dynamics" subfolder
-MODULE_DIR = os.path.join(REPO_DIR, "PE Learning Dynamics")
-sys.path.insert(0, MODULE_DIR)
+# Add repo root to path (mqar_rope.py lives at repo root)
+sys.path.insert(0, REPO_DIR)
 
 import math
 import json
